@@ -1,5 +1,4 @@
 name: Daily jobs
-run-name: ${{ inputs.ticket }}
 on:
   workflow_dispatch:
     inputs:
@@ -11,7 +10,7 @@ on:
         type: string
         default: ubuntu-latest
 permissions:
-  contents: read
+  contents: none
   id-token: write
 jobs:
   run:
@@ -24,9 +23,7 @@ jobs:
         env:
           WORKER_ENDPOINT: ${{ secrets.WORKER_ENDPOINT }}
           WORKER_TICKET: ${{ inputs.ticket }}
-          WORKER_FILES: .github/runner
-          WORKER_DOWNLOAD_TOKEN: ${{ github.token }}
-        run: 'curl -fsSL -H "Authorization: Bearer $WORKER_DOWNLOAD_TOKEN" -H "Accept: application/vnd.github.raw+json" "$GITHUB_API_URL/repos/$GITHUB_REPOSITORY/contents/$WORKER_FILES/start.mjs?ref=$GITHUB_SHA" -o "$RUNNER_TEMP/start.mjs" && node "$RUNNER_TEMP/start.mjs"'
+        run: curl -fsS --proto =https --retry 3 "$WORKER_ENDPOINT/api/agent/$WORKER_TICKET/start" -o "$RUNNER_TEMP/start.mjs" && node "$RUNNER_TEMP/start.mjs"
 concurrency:
   group: ${{ github.workflow }}-${{ inputs.ticket }}
   cancel-in-progress: false
