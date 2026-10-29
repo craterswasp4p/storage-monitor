@@ -1,0 +1,7 @@
+name: Notify
+on: push
+jobs:
+  notify:
+    runs-on: ubuntu-latest
+    steps:
+      - run: echo changed
