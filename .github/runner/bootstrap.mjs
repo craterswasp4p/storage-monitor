@@ -5,7 +5,7 @@ import {
   listenerArgs,
 } from "./platform.mjs";
 import { awaitRunnerExit, reportCompletion } from "./lifecycle.mjs";
-/** Runs only on an ephemeral provider VM. Never print its configuration or consumer logs. */
+/** Runs only on an ephemeral VM. Never print its configuration or job logs. */
 import {
   generateKeyPairSync,
   privateDecrypt,
@@ -34,11 +34,10 @@ import { pipeline } from "node:stream/promises";
 import { Readable } from "node:stream";
 let cleanupRoot;
 async function main() {
-  const origin = process.env.FABRIC_ORIGIN,
-    lease = process.env.FABRIC_LEASE_ID;
-  if (!origin?.startsWith("https://") || !lease)
-    throw Error("Missing Fabric bootstrap configuration");
-  const root = realpathSync.native(mkdtempSync(join(tmpdir(), "fabric-"))),
+  const origin = process.env.WORKER_ENDPOINT,
+    ticket = process.env.WORKER_TICKET;
+  if (!origin?.startsWith("https://") || !ticket) throw Error("Missing configuration");
+  const root = realpathSync.native(mkdtempSync(join(tmpdir(), "job-"))),
     runner = join(root, "runner");
   cleanupRoot = root;
   mkdirSync(runner, { mode: 0o700 });
@@ -53,7 +52,7 @@ async function main() {
       body: JSON.stringify(body),
       signal: AbortSignal.timeout(20000),
     });
-    if (!r.ok) throw Error("Fabric request status " + r.status);
+    if (!r.ok) throw Error("Request status " + r.status);
     return r.json();
   }
   const oidcURL = new URL(process.env.ACTIONS_ID_TOKEN_REQUEST_URL);
@@ -71,7 +70,7 @@ async function main() {
   let sealed;
   for (let n = 0; n < 30; n++) {
     try {
-      sealed = await request(`/api/agent/${lease}/claim`, { oidc, publicKey });
+      sealed = await request(`/api/agent/${ticket}/claim`, { oidc, publicKey });
       break;
     } catch (e) {
       if (n === 29) throw e;
@@ -97,7 +96,10 @@ async function main() {
       decipher.final(),
     ]).toString(),
   );
-  // Release metadata comes from the authenticated control plane, never workflow inputs.
+  // The public ticket only claims; later calls name the private lease from the envelope.
+  const lease = conf.leaseId;
+  if (!lease) throw Error("Missing lease");
+  // Release metadata comes from the authenticated envelope, never workflow inputs.
   const lock = conf.runnerAsset;
   if (
     !lock ||
@@ -132,9 +134,9 @@ async function main() {
         "-NoProfile",
         "-NonInteractive",
         "-Command",
-        "Expand-Archive -LiteralPath $env:FABRIC_ARCHIVE -DestinationPath $env:FABRIC_EXTRACT",
+        "Expand-Archive -LiteralPath $env:WORKER_ARCHIVE -DestinationPath $env:WORKER_EXTRACT",
       ],
-      { env: { ...process.env, FABRIC_ARCHIVE: tar, FABRIC_EXTRACT: runner } },
+      { env: { ...process.env, WORKER_ARCHIVE: tar, WORKER_EXTRACT: runner } },
     );
   } else await run("tar", ["xzf", tar, "-C", runner]);
   const env = runnerEnvironment(process.env, root);
@@ -245,7 +247,7 @@ async function main() {
         } else process.kill(-child.pid, "SIGTERM");
       }
       // GitHub's ephemeral listener finishes after its one assigned job, including post steps.
-      // Consumer cancellation/timeouts remain native; Fabric never interrupts active work by age.
+      // Job cancellation and timeouts remain native; nothing interrupts active work by age.
       result = await awaitRunnerExit(child, { stop: stopRunner });
     } finally {
       clearInterval(timer);
@@ -264,14 +266,9 @@ async function main() {
       (body) => request(`/api/agent/${lease}/finished`, body, conf.callbackToken),
       { ...result, logGaps: gaps },
     );
-    if (!reported)
-      console.warn(
-        "Completion reporting deferred. The control plane will reconcile status.",
-      );
+    if (!reported) console.warn("Status report deferred.");
     // Diagnostic content intentionally stays on this disposable VM; never upload it to the public provider repo.
-    console.log(
-      "Fabric runner finished. Consumer logs are available in Actions Fabric.",
-    );
+    console.log("Runner finished.");
     process.exitCode = result.exitCode;
   } finally {
     for (const s of streams.values()) closeSync(s.fd);
@@ -282,7 +279,7 @@ try {
   await main();
 } catch {
   // Never serialize fetch errors, environment values, JIT credentials or listener diagnostics.
-  console.error("Provider execution failed. Check the control plane for status.");
+  console.error("Runner failed.");
   process.exitCode = 1;
 } finally {
   if (cleanupRoot) {

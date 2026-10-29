@@ -7,7 +7,7 @@ export function runnerAsset(lock, platform = process.platform, arch = process.ar
     throw Error(`Unsupported or unpinned runner platform: ${key}`);
   return asset;
 }
-/** Copy only host prerequisites. Never inherit outer Actions/OIDC/runtime credentials. */
+/** Copy only host prerequisites. Never inherit outer workflow, OIDC or runtime credentials. */
 export function runnerEnvironment(source, root, platform = process.platform) {
   const env = {},
     paths = platform === "win32" ? win32 : posix;
