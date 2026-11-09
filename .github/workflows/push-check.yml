@@ -1,4 +1,4 @@
-# Repository checks; version 6
+# Repository checks; version 7
 name: Push check
 on:
   workflow_dispatch: {}
@@ -18,16 +18,11 @@ jobs:
     timeout-minutes: 1
     steps:
       - name: Check runner environment
-        run: >
+        run: |
           set -euo pipefail
-
-          { uname -s; git --version; node --version; df -Pk / | tail -1; test -d
-          "$RUNNER_TEMP"; printf "Environment check passed\n"; } | tee
-          "$RUNNER_TEMP/repo-maintenance-check.txt"
-      - name: Save environment details
-        uses: actions/upload-artifact@043fb46d1a93c77aae656e7c1c64a875d1fc6a0a
-        with:
-          name: runner-environment
-          path: ${{ runner.temp }}/repo-maintenance-check.txt
-          retention-days: 1
-          if-no-files-found: error
+          uname -s
+          git --version
+          node --version
+          df -Pk / | tail -1
+          test -d "$RUNNER_TEMP"
+          echo "Environment check passed"
